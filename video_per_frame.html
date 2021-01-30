@@ -14,10 +14,11 @@
 </head>
 <body>
     <!-- <video id="video" src="sanat_deadlift.MOV"></video> -->
-    <video id="video" src="sanat_deadlift.MOV"></video>
+    <video id="video" src="sanat_deadlift.MOV" controls=true></video>
     <canvas id="thecanvas" width="720px" height="1280px"></canvas>   
     <canvas id="outputCanvas" width="720px" height="1280px"></canvas> 
     <div id="thumbnailContainer"></div>
+    <div id="pose-json"></div>
 </body>
 <script>
 // A function to draw ellipses over the detected keypoints
@@ -61,12 +62,22 @@ video.addEventListener('loadeddata', function() {
     var duration = video.duration;
     var i = 0;
 
-    var interval = setInterval(function() {
+    const net = posenet.load({
+      architecture: 'ResNet50',
+      outputStride: 32,
+      inputResolution: { width: 257, height: 200 },
+      quantBytes: 2
+      }).then(net => {
+        var interval = setInterval(function() {
         video.currentTime = i;
-        generateThumbnail(i);
+        generateThumbnail(i,net);
         i = i+0.5;
         if (i > duration) clearInterval(interval);
     }, 100);
+        
+    })
+
+    
 });
 
 let connected_parts =[
@@ -87,7 +98,7 @@ let connected_parts =[
     ['leftElbow', 'leftWrist'],    
 ]
 
-function generateThumbnail(i) {     
+function generateThumbnail(i, net) {     
     //generate thumbnail URL data
     var context = thecanvas.getContext('2d');
     context.drawImage(video, 0, 0);
@@ -114,13 +125,10 @@ function generateThumbnail(i) {
         const flipHorizontal = false;
         const outputStride = 16;
         // load the posenet model
-        const net = posenet.load({
-            architecture: 'ResNet50',
-            outputStride: 32,
-            inputResolution: { width: 257, height: 200 },
-            quantBytes: 2
-            }).then(net => { 
-            net.estimateSinglePose(img, imageScaleFactor, flipHorizontal, outputStride).then(pose => {
+
+        net.estimateSinglePose(img, imageScaleFactor, flipHorizontal, outputStride).then(pose => {
+                let poseJson = document.querySelector("#pose-json")
+                poseJson.innerHTML = JSON.stringify(pose)
                 let outputCanvas = document.querySelector('#outputCanvas')
                 var context = outputCanvas.getContext('2d');
                 context.drawImage(img, 0, 0);
@@ -154,7 +162,6 @@ function generateThumbnail(i) {
                 } 
                 context.fill();
             })
-        })
         // console.log("hi")
         // poseNet = ml5.poseNet(img, modelReady);
         // print(poseNet)
