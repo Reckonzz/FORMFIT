@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://unpkg.com/@tensorflow/tfjs"></script>
+    <!-- Load Posenet -->
+    <script src="https://unpkg.com/@tensorflow-models/posenet">
+    </script>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/addons/p5.dom.min.js"></script>
+    <script src="https://unpkg.com/ml5@0.3.1/dist/ml5.min.js"></script> -->
+</head>
+<body>
+    <!-- <video id="video" src="sanat_deadlift.MOV"></video> -->
+    <video id="video" src="sanat_deadlift.MOV"></video>
+    <canvas id="thecanvas" width="720px" height="1280px"></canvas>   
+    <canvas id="outputCanvas" width="720px" height="1280px"></canvas> 
+    <div id="thumbnailContainer"></div>
+</body>
+<script>
+// A function to draw ellipses over the detected keypoints
+function drawKeypoints() {
+  // Loop through all the poses detected
+  for (let i = 0; i < poses.length; i += 1) {
+    // For each pose detected, loop through all the keypoints
+    const pose = poses[i].pose;
+    for (let j = 0; j < pose.keypoints.length; j += 1) {
+      // A keypoint is an object describing a body part (like rightArm or leftShoulder)
+      const keypoint = pose.keypoints[j];
+      // Only draw an ellipse is the pose probability is bigger than 0.2
+      if (keypoint.score > 0.2) {
+        fill(255, 0, 0);
+        noStroke();
+        ellipse(keypoint.position.x, keypoint.position.y, 10, 10);
+      }
+    }
+  }
+}
+
+// A function to draw the skeletons
+function drawSkeleton() {
+  // Loop through all the skeletons detected
+  for (let i = 0; i < poses.length; i += 1) {
+    const skeleton = poses[i].skeleton;
+    // For every skeleton, loop through all body connections
+    for (let j = 0; j < skeleton.length; j += 1) {
+      const partA = skeleton[j][0];
+      const partB = skeleton[j][1];
+      stroke(255, 0, 0);
+      line(partA.position.x, partA.position.y, partB.position.x, partB.position.y);
+    }
+  }
+}
+
+let video = document.querySelector("#video")
+let thecanvas = document.querySelector("#thecanvas")
+
+video.addEventListener('loadeddata', function() {
+    var duration = video.duration;
+    var i = 0;
+
+    var interval = setInterval(function() {
+        video.currentTime = i;
+        generateThumbnail(i);
+        i = i+0.5;
+        if (i > duration) clearInterval(interval);
+    }, 100);
+});
+
+let connected_parts =[
+    ['nose',"rightEye"],
+    ['nose',"leftEye"], 
+    ['rightEye','rightEar'],
+    ['leftEye','leftEar'],
+    ['rightWrist','rightElbow'],
+    ['rightElbow', 'rightShoulder'],
+    ['rightShoulder', 'rightHip'],
+    ['rightHip', 'rightKnee'],
+    ['rightKnee','rightAnkle'],
+    ['rightHip', 'leftHip'],
+    ['leftHip', 'leftKnee'],
+    ['leftKnee','leftAnkle'],
+    ['leftHip', 'leftShoulder'],
+    ['leftShoulder', 'leftElbow'],
+    ['leftElbow', 'leftWrist'],    
+]
+
+function generateThumbnail(i) {     
+    //generate thumbnail URL data
+    var context = thecanvas.getContext('2d');
+    context.drawImage(video, 0, 0);
+    var dataURL = thecanvas.toDataURL();
+
+    //create img
+    var img = document.createElement('img');
+    img.setAttribute('src', dataURL);
+
+    // poseNet = ml5.poseNet(img, modelReady);
+    // console.log(p5.image)
+    //     poseNet.on("pose", function(results) {
+    //         poses = results;
+    //     });
+    //     image(img, 0, 0, 500, 500);
+
+    //     // We can call both functions to draw all keypoints and the skeletons
+    //     drawKeypoints();
+    //     drawSkeleton();
+    //     document.getElementById('thumbnailContainer').appendChild(img);
+
+    img.onload = () => {
+        const imageScaleFactor = 0.50;
+        const flipHorizontal = false;
+        const outputStride = 16;
+        // load the posenet model
+        const net = posenet.load({
+            architecture: 'ResNet50',
+            outputStride: 32,
+            inputResolution: { width: 257, height: 200 },
+            quantBytes: 2
+            }).then(net => { 
+            net.estimateSinglePose(img, imageScaleFactor, flipHorizontal, outputStride).then(pose => {
+                let outputCanvas = document.querySelector('#outputCanvas')
+                var context = outputCanvas.getContext('2d');
+                context.drawImage(img, 0, 0);
+                context.beginPath();
+                
+                let parts_pos = {}
+                threshold = 0.3
+                
+                keypoints = pose['keypoints']
+                for (keypoint of keypoints){
+                  pos = keypoint['position']
+                  if (keypoint['score'] > threshold){
+                    context.moveTo(pos.x,pos.y);
+                    context.arc(pos.x, pos.y, 10, 0, 2 * Math.PI)
+                  }
+                  parts_pos[keypoint["part"]] = {pos:[pos.x, pos.y], score: keypoint['score']}
+                }
+
+                for (connected_part of connected_parts){   
+                    part_one = connected_part[0]
+                    part_two = connected_part[1]
+                    if (parts_pos[part_one]['score'] > threshold && parts_pos[part_two]['score'] > threshold){
+                      start_x = parts_pos[part_one]['pos'][0]
+                      start_y = parts_pos[part_one]['pos'][1]
+                      end_x = parts_pos[part_two]['pos'][0]
+                      end_y = parts_pos[part_two]['pos'][1]
+                      context.moveTo(start_x, start_y)
+                      context.lineTo(end_x, end_y)
+                      context.stroke()
+                    }
+                } 
+                context.fill();
+            })
+        })
+        // console.log("hi")
+        // poseNet = ml5.poseNet(img, modelReady);
+        // print(poseNet)
+        // poseNet.on("pose", function(results) {
+        //     poses = results;
+        // });
+        // image(img, 0, 0, width, height);
+        // print(img)
+
+        // // We can call both functions to draw all keypoints and the skeletons
+        // drawKeypoints();
+        // drawSkeleton();
+        // document.getElementById('thumbnailContainer').appendChild(img);
+    }
+
+    }
+
+    //append img in container div
+    
+</script>
+</html>
